@@ -4,11 +4,12 @@ import requests
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
+# чат админа по умолчанию
 DEFAULT_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 
 
 # =========================
-# BASIC SEND / EDIT
+# ОТПРАВКА СООБЩЕНИЙ
 # =========================
 def send(text, chat_id=None, keyboard=None, return_message_id=False):
     payload = {
@@ -43,6 +44,9 @@ def edit(text, message_id, chat_id=None):
 
 
 def send_to_all(text):
+    """
+    Отправляет сообщение всем пользователям бота
+    """
     from utils.users import all_users
 
     for uid in all_users():
@@ -53,20 +57,20 @@ def send_to_all(text):
 
 
 # =========================
-# MENUS
+# МЕНЮ
 # =========================
 def main_menu(is_admin=False):
     keyboard = {
         "inline_keyboard": [
-            [{"text": "📊 Market", "callback_data": "market"}],
-            [{"text": "🪙 Symbols", "callback_data": "symbols"}],
-            [{"text": "📰 News", "callback_data": "news"}],
+            [{"text": "📊 Рынок", "callback_data": "market"}],
+            [{"text": "🪙 Торговые пары", "callback_data": "symbols"}],
+            [{"text": "📰 Новости", "callback_data": "news"}],
         ]
     }
 
     if is_admin:
         keyboard["inline_keyboard"].append(
-            [{"text": "⚙️ Settings", "callback_data": "settings"}]
+            [{"text": "⚙️ Настройки", "callback_data": "settings"}]
         )
 
     return keyboard
@@ -78,7 +82,7 @@ def symbols_menu(state):
     """
     keyboard = {"inline_keyboard": []}
 
-    for symbol, enabled in state["symbols"].items():
+    for symbol, enabled in state.get("symbols", {}).items():
         icon = "✅" if enabled else "❌"
         keyboard["inline_keyboard"].append(
             [{
@@ -88,25 +92,25 @@ def symbols_menu(state):
         )
 
     keyboard["inline_keyboard"].append(
-        [{"text": "⬅️ Back", "callback_data": "back"}]
+        [{"text": "⬅️ Назад", "callback_data": "back"}]
     )
 
     return keyboard
 
 
 # =========================
-# STATUS TEXT (ДЛЯ HANDLER)
+# СТАТУС БОТА
 # =========================
 def status_text(state):
     """
-    Текст статуса бота для inline-меню
+    Текст статуса бота (используется в handler)
     """
-    lines = ["🤖 <b>Bot status</b>\n"]
+    lines = ["🤖 <b>Статус бота</b>\n"]
 
-    bot_state = "🟢 ON" if state.get("bot_active") else "🔴 OFF"
-    lines.append(f"Bot: {bot_state}\n")
+    bot_state = "🟢 ВКЛЮЧЕН" if state.get("bot_active") else "🔴 ВЫКЛЮЧЕН"
+    lines.append(f"Состояние: {bot_state}\n")
 
-    lines.append("🪙 Symbols:")
+    lines.append("🪙 Торговые пары:")
     for sym, enabled in state.get("symbols", {}).items():
         icon = "✅" if enabled else "❌"
         lines.append(f"{icon} {sym}")
