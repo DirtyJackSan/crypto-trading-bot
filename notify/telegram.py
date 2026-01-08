@@ -5,23 +5,25 @@ import requests
 from datetime import datetime, UTC
 
 from utils.state import STATE
+from utils.users import all_users
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
 
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# 🔒 Одна сессия, без keep-alive (важно для Termux)
 session = requests.Session()
 session.headers.update({"Connection": "close"})
 
 
 # =========================
-# SEND MESSAGE
+# SEND TO ONE USER
 # =========================
-def send(text, keyboard=None, retries=3):
+def send(text, keyboard=None, chat_id=None, retries=3):
+    if chat_id is None:
+        return False
+
     payload = {
-        "chat_id": CHAT_ID,
+        "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True
@@ -41,28 +43,36 @@ def send(text, keyboard=None, retries=3):
                 return True
             print(f"⚠️ Telegram HTTP {r.status_code}: {r.text}")
         except Exception as e:
-            print(f"❌ Telegram send error (try {attempt+1}):", e)
+            print(f"❌ Telegram error (try {attempt+1}):", e)
             time.sleep(2 * (attempt + 1))
+
     return False
 
 
 # =========================
-# MAIN MENU
+# SEND TO ALL USERS
 # =========================
-def main_menu():
-    return {
-        "inline_keyboard": [
-            [{"text": "▶️ Торговля", "callback_data": "trade_menu"}],
-            [{"text": "💱 Валюты", "callback_data": "symbols_menu"}],
-            [{"text": "📊 Статус", "callback_data": "status"}],
-            [{"text": "📰 Новости", "callback_data": "news_menu"}]
-        ]
-    }
+def send_to_all(text, keyboard=None):
+    for uid in all_users():
+        send(text, keyboard=keyboard, chat_id=uid)
 
 
 # =========================
-# SYMBOLS MENU
+# MENUS
 # =========================
+def main_menu(is_admin=False):
+    buttons = [
+        [{"text": "📊 Статус", "callback_data": "status"}],
+        [{"text": "📰 Новости", "callback_data": "news_menu"}]
+    ]
+
+    if is_admin:
+        buttons.insert(0, [{"text": "▶️ Торговля", "callback_data": "trade_menu"}])
+        buttons.insert(1, [{"text": "💱 Валюты", "callback_data": "symbols_menu"}])
+
+    return {"inline_keyboard": buttons}
+
+
 def symbols_menu():
     buttons = []
 
@@ -74,21 +84,15 @@ def symbols_menu():
         }])
 
     buttons.append([{"text": "🔙 Назад", "callback_data": "back"}])
-
     return {"inline_keyboard": buttons}
 
 
-# =========================
-# STATUS TEXT
-# =========================
 def status_text():
-    active_symbols = [s for s, v in STATE["symbols"].items() if v]
+    active = [s for s, v in STATE["symbols"].items() if v]
 
     return (
         f"📊 <b>Статус бота</b>\n\n"
         f"▶️ Торговля: {'ВКЛ' if STATE['bot_active'] else 'ВЫКЛ'}\n"
-        f"⚙️ Режим: {STATE.get('mode', 'SPOT')}\n"
-        f"⚡ Плечо: x{STATE.get('leverage', 1)}\n"
-        f"💱 Пары: {', '.join(active_symbols) if active_symbols else 'нет'}\n"
-        f"🕒 Время: {datetime.now(UTC).strftime('%H:%M UTC')}"
+        f"💱 Пары: {', '.join(active) if active else 'нет'}\n"
+        f"🕒 {datetime.now(UTC).strftime('%H:%M UTC')}"
     )
