@@ -1,29 +1,28 @@
+"""
+News Engine
+
+Отвечает за:
+- сбор новостей (RSS)
+- GPT-анализ значимости
+- подтверждение рынком (market confirmation)
+- отправку сигналов в Telegram
+
+ТОЛЬКО аналитика, БЕЗ торговли.
+"""
+
 import time
-from news.collector import collect
-from news.filter import classify
-from news.storage import is_new
-from news.notifier import send_news
+
+from news.rss import collect_rss
+from news.gpt import analyze_news
 from market.confirmation import confirm_market
+from notify.telegram import send_to_all
 
-for sym in item["currencies"]:
-    if sym not in ("BTC", "ETH"):
-        continue
 
-    confirm = confirm_market(sym, analysis["sentiment"])
-    if not confirm:
-        continue
+# Запоминаем уже обработанные новости (по заголовку)
+SEEN_TITLES = set()
 
-    msg = (
-        f"✅ <b>NEWS CONFIRMED</b>\n\n"
-        f"🪙 {confirm['pair']}\n"
-        f"📰 {item['title']}\n\n"
-        f"📊 GPT Score: {analysis['score']}\n"
-        f"📈 Price change (5m): {confirm['change']}%\n"
-        f"📊 Volume spike: x{confirm['volume_ratio']}\n\n"
-        f"⚠️ Ready for entry"
-    )
-
-    send_to_all(msg)
+# Минимальный GPT score для анализа
+MIN_GPT_SCORE = 70
 
 
 def news_loop():
@@ -31,20 +30,60 @@ def news_loop():
 
     while True:
         try:
-            news = collect()
+            # 1️⃣ Собираем новости
+            news_items = collect_rss()
 
-            for n in news:
-                item = classify(n)
-                if not item:
+            for item in news_items:
+                title = item.get("title")
+                if not title:
                     continue
 
-                uid = item["title"]
-                if not is_new(uid):
+                # антидубль
+                if title in SEEN_TITLES:
                     continue
 
-                send_news(item)
+                # помечаем как просмотренную
+                SEEN_TITLES.add(title)
+
+                # 2️⃣ GPT-анализ
+                analysis = analyze_news(item)
+                if not analysis:
+                    continue
+
+                score = analysis.get("score", 0)
+                sentiment = analysis.get("sentiment", "neutral")
+                impact = analysis.get("impact", "low")
+
+                # фильтр по силе
+                if score < MIN_GPT_SCORE:
+                    continue
+
+                # 3️⃣ Проверка рынка (только BTC / ETH)
+                for sym in item.get("currencies", []):
+                    if sym not in ("BTC", "ETH"):
+                        continue
+
+                    confirmation = confirm_market(sym, sentiment)
+                    if not confirmation:
+                        continue
+
+                    # 4️⃣ Отправка подтверждённого сигнала
+                    msg = (
+                        f"✅ <b>NEWS CONFIRMED</b>\n\n"
+                        f"🪙 {confirmation['pair']}\n"
+                        f"📰 {title}\n\n"
+                        f"📊 GPT Score: {score}\n"
+                        f"📈 Price change (5m): {confirmation['price_change_5m']}%\n"
+                        f"📊 Volume spike: x{confirmation['volume_ratio']}\n"
+                        f"🧠 Sentiment: {sentiment}\n\n"
+                        f"⚠️ Ready for entry\n\n"
+                        f"🔗 {item.get('url', '')}"
+                    )
+
+                    send_to_all(msg)
 
         except Exception as e:
             print("❌ News engine error:", e)
 
-        time.sleep(180)  # каждые 3 минуты
+        # Проверяем новости каждые 5 минут
+        time.sleep(300)
