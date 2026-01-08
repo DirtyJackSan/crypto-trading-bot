@@ -1,50 +1,44 @@
-import requests
-import os
+from notify.telegram import (
+    send,
+    send_to_all,
+    main_menu,
+    symbols_menu,
+    status_text
+)
 from utils.state import STATE
-from notify.telegram import send, main_menu, symbols_menu, status_text
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+from utils.users import is_admin
 
 
-def answer_callback(callback_id):
-    requests.post(f"{API}/answerCallbackQuery", json={
-        "callback_query_id": callback_id
-    })
+def process_callback(data, chat_id):
+    # 🔙 Назад
+    if data == "back":
+        send("Главное меню", main_menu(is_admin(chat_id)), chat_id=chat_id)
+        return
 
+    # 📊 Статус
+    if data == "status":
+        send(status_text(), chat_id=chat_id)
+        return
 
-def process_callback(cb):
-    cid = cb["id"]
-    data = cb["data"]
+    # ⛔️ Ограничения для НЕ админа
+    if not is_admin(chat_id):
+        send("⛔ У вас нет прав для этого действия", chat_id=chat_id)
+        return
 
-    if data == "symbols_menu":
-        send("💱 <b>Выбор валют</b>", symbols_menu())
-
-    elif data.startswith("toggle_symbol:"):
-        symbol = data.split(":")[1]
-        STATE["symbols"][symbol] = not STATE["symbols"][symbol]
-        send("💱 <b>Выбор валют</b>", symbols_menu())
-
-    elif data == "status":
-        send(status_text(), main_menu())
-
-    elif data == "trade_menu":
-        send(
-            f"▶️ <b>Торговля</b>\n\n"
-            f"Статус: {'ВКЛ' if STATE['bot_active'] else 'ВЫКЛ'}",
-            {
-                "inline_keyboard": [
-                    [{"text": "⏯ Вкл / Выкл", "callback_data": "toggle_trade"}],
-                    [{"text": "🔙 Назад", "callback_data": "back"}]
-                ]
-            }
-        )
-
-    elif data == "toggle_trade":
+    # ▶️ Торговля
+    if data == "trade_menu":
         STATE["bot_active"] = not STATE["bot_active"]
-        send("📊 Главное меню", main_menu())
+        send_to_all(f"▶️ Торговля {'ВКЛ' if STATE['bot_active'] else 'ВЫКЛ'}")
+        return
 
-    elif data == "back":
-        send("📊 Главное меню", main_menu())
+    # 💱 Валюты
+    if data == "symbols_menu":
+        send("Выбор валют", symbols_menu(), chat_id=chat_id)
+        return
 
-    answer_callback(cid)
+    # 🔄 Переключение пары
+    if data.startswith("toggle_symbol:"):
+        symbol = data.split(":")[1]
+        STATE["symbols"][symbol] = not STATE["symbols"].get(symbol, False)
+        send("Обновлено", symbols_menu(), chat_id=chat_id)
+        return
