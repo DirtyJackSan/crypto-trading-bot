@@ -9,13 +9,14 @@ from core.strategy import signal
 from notify.telegram import (
     send,
     send_to_all,
-    main_menu
+    main_menu,
+    edit
 )
 from notify.polling import poll
 
 from utils.state import STATE
 from utils.users import all_users, is_admin
-from utils.formatter import format_market_update
+from utils.dashboard import DASHBOARD
 from config.settings import TIMEFRAME, LOOP_SLEEP
 
 from news.engine import news_loop
@@ -35,10 +36,31 @@ def telegram_loop():
 
 
 # =========================
-# MARKET LOOP (ЦЕНЫ + СИГНАЛЫ)
+# FORMAT DASHBOARD
+# =========================
+def format_dashboard(rows):
+    lines = ["📊 <b>Market Dashboard</b>\n"]
+
+    for r in rows:
+        change = r["change"]
+        arrow = "🟢" if change > 0 else "🔴" if change < 0 else "⚪️"
+
+        lines.append(
+            f"{arrow} <b>{r['symbol']}</b>: "
+            f"{r['price']:.4f} ({change:+.2f}%)"
+        )
+
+    ts = datetime.now(UTC).strftime("%H:%M:%S UTC")
+    lines.append(f"\n⏱ Updated: {ts}")
+
+    return "\n".join(lines)
+
+
+# =========================
+# MARKET LOOP (DASHBOARD + SIGNALS)
 # =========================
 def market_loop():
-    # 🔔 Приветствие всем пользователям с их меню
+    # 🔔 Приветствие всем пользователям
     for uid in all_users():
         send(
             "🤖 Бот запущен и работает",
@@ -46,10 +68,7 @@ def market_loop():
             chat_id=uid
         )
 
-    last_market_send = 0
-
     while True:
-        now = time.time()
         print(f"[{datetime.now(UTC)}] 📊 Market tick")
 
         rows = []
@@ -62,21 +81,15 @@ def market_loop():
                 c = candles(symbol, TIMEFRAME)
 
                 if not c or len(c) < 4:
-                    print(f"⚠️ {symbol}: недостаточно свечей")
                     continue
 
                 last_price = c[-1][4]
-                prev_price = c[-4][4]  # ~15 минут назад
+                prev_price = c[-4][4]  # ~15 минут
 
                 if not prev_price or prev_price <= 0:
                     continue
 
                 change = ((last_price - prev_price) / prev_price) * 100
-
-                print(
-                    f"✔ {symbol}: price={last_price:.4f} "
-                    f"change={change:+.2f}%"
-                )
 
                 rows.append({
                     "symbol": symbol,
@@ -84,7 +97,7 @@ def market_loop():
                     "change": change
                 })
 
-                # 📈 Сигналы (пока только уведомление)
+                # 📈 СИГНАЛЫ (ТОЛЬКО УВЕДОМЛЕНИЯ)
                 if STATE["bot_active"]:
                     data = indicators(c)
                     sig = signal(data)
@@ -96,12 +109,26 @@ def market_loop():
             except Exception as e:
                 print(f"❌ Market error {symbol}:", e)
 
-        # 📤 Общее обновление рынка раз в 15 минут
-        if rows and now - last_market_send >= 900:
-            msg = format_market_update(rows)
-            send_to_all(msg)
-            last_market_send = now
-            print("📤 Market update отправлен в Telegram")
+        # 📊 DASHBOARD (ОДНО СООБЩЕНИЕ)
+        if rows:
+            text = format_dashboard(rows)
+
+            admin_id = next(iter(all_users()))
+
+            if DASHBOARD["message_id"] is None:
+                msg = send(
+                    text,
+                    chat_id=admin_id,
+                    keyboard=main_menu(is_admin(admin_id)),
+                    return_message_id=True
+                )
+                DASHBOARD["message_id"] = msg["message_id"]
+            else:
+                edit(
+                    text,
+                    message_id=DASHBOARD["message_id"],
+                    chat_id=admin_id
+                )
 
         time.sleep(LOOP_SLEEP)
 
@@ -120,6 +147,5 @@ if __name__ == "__main__":
 
     print("🚀 Все потоки запущены")
 
-    # держим главный поток живым
     while True:
         time.sleep(10)
