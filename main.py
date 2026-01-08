@@ -6,10 +6,15 @@ from market.data import candles
 from market.indicators import indicators
 from core.strategy import signal
 
-from notify.telegram import send, main_menu
+from notify.telegram import (
+    send,
+    send_to_all,
+    main_menu
+)
 from notify.polling import poll
 
 from utils.state import STATE
+from utils.users import all_users, is_admin
 from utils.formatter import format_market_update
 from config.settings import TIMEFRAME, LOOP_SLEEP
 
@@ -17,7 +22,7 @@ from news.engine import news_loop
 
 
 # =========================
-# TELEGRAM LOOP (МЕНЮ)
+# TELEGRAM LOOP (INLINE МЕНЮ)
 # =========================
 def telegram_loop():
     print("🤖 Telegram loop started")
@@ -25,17 +30,23 @@ def telegram_loop():
         try:
             poll()
         except Exception as e:
-            print("❌ Telegram error:", e)
+            print("❌ Telegram polling error:", e)
         time.sleep(1)
 
 
 # =========================
-# MARKET LOOP (ЦЕНЫ)
+# MARKET LOOP (ЦЕНЫ + СИГНАЛЫ)
 # =========================
 def market_loop():
-    send("🤖 Бот запущен (Termux, OKX)", main_menu())
+    # 🔔 Приветствие всем пользователям с их меню
+    for uid in all_users():
+        send(
+            "🤖 Бот запущен и работает",
+            keyboard=main_menu(is_admin(uid)),
+            chat_id=uid
+        )
 
-    last_send = 0  # время последней отправки market update
+    last_market_send = 0
 
     while True:
         now = time.time()
@@ -54,38 +65,42 @@ def market_loop():
                     print(f"⚠️ {symbol}: недостаточно свечей")
                     continue
 
-                last = c[-1][4]
-                prev = c[-4][4]  # ~15 минут назад
+                last_price = c[-1][4]
+                prev_price = c[-4][4]  # ~15 минут назад
 
-                if not prev or prev <= 0:
-                    print(f"⚠️ {symbol}: некорректная цена")
+                if not prev_price or prev_price <= 0:
                     continue
 
-                change = ((last - prev) / prev) * 100
+                change = ((last_price - prev_price) / prev_price) * 100
 
-                print(f"✔ {symbol}: price={last:.4f} change={change:+.2f}%")
+                print(
+                    f"✔ {symbol}: price={last_price:.4f} "
+                    f"change={change:+.2f}%"
+                )
 
                 rows.append({
                     "symbol": symbol,
-                    "price": last,
+                    "price": last_price,
                     "change": change
                 })
 
-                # 🔔 сигналы (ПОКА только уведомление)
+                # 📈 Сигналы (пока только уведомление)
                 if STATE["bot_active"]:
                     data = indicators(c)
                     sig = signal(data)
                     if sig:
-                        send(f"📈 <b>{sig}</b> {symbol}")
+                        send_to_all(
+                            f"📈 <b>{sig}</b> {symbol}"
+                        )
 
             except Exception as e:
                 print(f"❌ Market error {symbol}:", e)
 
-        # 🔔 ОДНО общее сообщение раз в 15 минут
-        if rows and now - last_send >= 900:
+        # 📤 Общее обновление рынка раз в 15 минут
+        if rows and now - last_market_send >= 900:
             msg = format_market_update(rows)
-            send(msg)
-            last_send = now
+            send_to_all(msg)
+            last_market_send = now
             print("📤 Market update отправлен в Telegram")
 
         time.sleep(LOOP_SLEEP)
