@@ -92,3 +92,23 @@ def symbols_menu(state):
     )
 
     return keyboard
+
+
+# =========================
+# STATUS TEXT (ДЛЯ HANDLER)
+# =========================
+def status_text(state):
+    """
+    Текст статуса бота для inline-меню
+    """
+    lines = ["🤖 <b>Bot status</b>\n"]
+
+    bot_state = "🟢 ON" if state.get("bot_active") else "🔴 OFF"
+    lines.append(f"Bot: {bot_state}\n")
+
+    lines.append("🪙 Symbols:")
+    for sym, enabled in state.get("symbols", {}).items():
+        icon = "✅" if enabled else "❌"
+        lines.append(f"{icon} {sym}")
+
+    return "\n".join(lines)
