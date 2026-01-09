@@ -1,36 +1,24 @@
-import time
-
-START_TIME = time.time()
-
 STATE = {
-    "bot_active": True,
-    "mode": "SPOT",              # SPOT / FUTURES
-    "symbols": {
-        "BTC-USDT": True,
-        "ETH-USDT": True,
-        "SOL-USDT": True
-    },
-    "leverage": 15,
-    "strategy": "AGGRESSIVE",
-    "news_enabled": False,
-    "twitter_enabled": False
-    STATE = {
+    # включена ли торговля
     "bot_active": False,
 
+    # режим риска
     "mode": "NORMAL",  # NORMAL / HIGH_RISK
 
+    # торговые инструменты
     "symbols": {
         "XAUUSD": True,
         "EURUSD": True,
     },
 
+    # риск-менеджмент
     "risk": {
-        "leverage": 100,
-        "risk_per_trade": 0.5,   # %
+        "risk_per_trade": 0.5,   # % от депозита
         "max_trades_day": 6,
-        "daily_loss_limit": 2.0  # %
+        "daily_loss_limit": 2.0  # % в день
     },
 
+    # параметры ордера
     "order": {
         "lot_mode": "AUTO",      # AUTO / MANUAL
         "manual_lot": 0.01,
